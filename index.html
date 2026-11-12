@@ -7,15 +7,14 @@
 <style>
   :root {
     --bg: #14161a;
-    --panel: #23272e;
     --panel-active: #2f9e5b;
     --panel-lost: #c0392b;
     --text: #e9ecef;
-    --muted: #8b939e;
     --bar: #1b1e23;
     --accent: #4dabf7;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; height: 100%; }
   body {
     background: var(--bg);
@@ -23,8 +22,8 @@
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     display: grid;
     height: 100dvh;
-    gap: 8px;
-    padding: 8px;
+    gap: 4px;
+    padding: 4px;
     grid-template-areas: "p1" "bar" "p2";
     grid-template-rows: 1fr auto 1fr;
     user-select: none;
@@ -44,10 +43,8 @@
   }
 
   .panel {
-    border: 0;
+    border: 6px solid transparent;
     border-radius: 16px;
-    background: var(--panel);
-    color: var(--text);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -55,19 +52,19 @@
     gap: 8px;
     cursor: pointer;
     font: inherit;
-    transition: background .15s;
+    transition: background .15s, opacity .15s, border-color .15s;
     min-height: 0;
   }
   #p1 { grid-area: p1; }
   #p2 { grid-area: p2; }
-  .panel { border: 6px solid transparent; transition: background .15s, opacity .15s, border-color .15s; }
   .panel.white { background: #f1f3f5; color: #111; }
   .panel.black { background: #08090b; color: #f1f3f5; border-color: #2b3038; }
-  .panel.active { border-color: var(--panel-active); box-shadow: 0 0 24px rgba(47, 158, 91, .6); }
+  .panel.active, .panel.won { border-color: var(--panel-active); box-shadow: 0 0 24px rgba(47, 158, 91, .6); }
   .panel.idle { opacity: .45; }
   .panel.lost { background: var(--panel-lost); color: #fff; animation: blink 1s steps(2) infinite; }
   @keyframes blink { 50% { opacity: .6; } }
   .panel .name { font-size: clamp(14px, 2.5vmin, 22px); opacity: .8; letter-spacing: .08em; text-transform: uppercase; }
+  .panel.won .name { opacity: 1; font-weight: 700; color: var(--panel-active); }
   .panel .time {
     font-size: clamp(56px, 19vmin, 220px);
     font-weight: 700;
@@ -78,38 +75,71 @@
   .panel.lost .time.low { color: #fff; text-shadow: none; }
   .panel .moves { font-size: clamp(13px, 2.2vmin, 18px); opacity: .7; }
 
+  /* Schmale Leiste mit kleinen Symbol-Knöpfen */
   #bar {
     grid-area: bar;
-    background: var(--bar);
-    border-radius: 16px;
-    padding: 8px 10px;
+    position: relative;
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 6px;
+    padding: 2px 0;
   }
-  .group { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
   button.ctl {
+    height: 34px;
+    min-width: 34px;
+    padding: 0 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
     background: #2b3038;
     color: var(--text);
     border: 1px solid #3a414b;
-    border-radius: 10px;
-    padding: 9px 13px;
+    border-radius: 9px;
     font: inherit;
-    font-size: 15px;
+    font-size: 16px;
+    line-height: 1;
     cursor: pointer;
   }
   button.ctl:hover { background: #343a44; }
-  button.ctl.sel { background: var(--accent); border-color: var(--accent); color: #06121d; font-weight: 600; }
   button.ctl.on { background: #e03131; border-color: #e03131; color: #fff; }
-  button.ctl:disabled { opacity: .4; cursor: default; }
-  #status {
-    flex-basis: 100%;
+  button.ctl.undo { background: #f08c00; border-color: #f08c00; color: #111; font-weight: 700; }
+  button.ctl:disabled { opacity: .35; cursor: default; }
+  button.ctl svg { display: block; }
+  #timeNum { font-size: 14px; font-weight: 600; }
+
+  .menuwrap { position: relative; }
+  #timeMenu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    background: var(--bar);
+    border: 1px solid #3a414b;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .6);
+  }
+  #timeMenu button.ctl { justify-content: flex-start; gap: 8px; height: 40px; padding: 0 12px; white-space: nowrap; }
+  #timeMenu button.ctl.sel { background: var(--accent); border-color: var(--accent); color: #06121d; font-weight: 600; }
+
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    z-index: 30;
+    max-width: 90vw;
+    padding: 8px 14px;
+    background: rgba(20, 22, 26, .95);
+    border: 1px solid #3a414b;
+    border-radius: 10px;
+    font-size: 14px;
     text-align: center;
-    font-size: 13px;
-    color: var(--muted);
-    min-height: 1.2em;
   }
 </style>
 </head>
@@ -122,20 +152,15 @@
 </button>
 
 <div id="bar">
-  <div class="group" id="presets">
-    <button class="ctl" data-min="1">1 Min</button>
-    <button class="ctl" data-min="3">3 Min</button>
-    <button class="ctl sel" data-min="5">5 Min</button>
-    <button class="ctl" data-min="10">10 Min</button>
-    <button class="ctl" data-min="30">30 Min</button>
+  <div class="menuwrap">
+    <button class="ctl" id="timeBtn" title="Bedenkzeit wählen"><span id="timeIcon"></span><span id="timeNum">5</span></button>
+    <div id="timeMenu" hidden></div>
   </div>
-  <div class="group">
-    <button class="ctl" id="swap">⇄ Weiß/Schwarz tauschen</button>
-    <button class="ctl" id="pause" disabled>⏸ Pause</button>
-    <button class="ctl" id="reset">↺ Neu</button>
-    <button class="ctl" id="mic">🎤 Sprache an</button>
-  </div>
-  <div id="status"></div>
+  <button class="ctl" id="swap" title="Weiß und Schwarz tauschen">⇄</button>
+  <button class="ctl" id="pause" title="Pause" disabled>⏸</button>
+  <button class="ctl" id="reset" title="Neue Partie">↺</button>
+  <button class="ctl" id="mic" title="Sprachsteuerung">🎤</button>
+  <button class="ctl undo" id="undoMate" title="Kein Schachmatt – weiterspielen" hidden>↩ ♚</button>
 </div>
 
 <button class="panel" id="p2">
@@ -144,28 +169,49 @@
   <span class="moves" id="m2">Züge: 0</span>
 </button>
 
+<div id="toast" hidden></div>
+
 <script>
 (() => {
   const $ = id => document.getElementById(id);
   const panels = [$('p1'), $('p2')];
   const timeEls = [$('t1'), $('t2')];
   const moveEls = [$('m1'), $('m2')];
-  const statusEl = $('status');
+  const nameEls = [$('n1'), $('n2')];
   const pauseBtn = $('pause');
   const micBtn = $('mic');
-
-  const nameEls = [$('n1'), $('n2')];
   const swapBtn = $('swap');
-  let whiteIdx = 0;         // welche Uhr Weiß gehört
-  const nameOf = i => i === whiteIdx ? 'Weiß' : 'Schwarz';
-  const START_HINT = 'Weiß beginnt: Uhr antippen, Leertaste oder „weiter“ sagen.';
+  const undoBtn = $('undoMate');
+  const timeBtn = $('timeBtn');
+  const timeMenu = $('timeMenu');
+  const toastEl = $('toast');
+
+  // Symbole: Kugel (Bullet), Blitz, Uhr
+  const BULLET = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><g transform="rotate(45 12 12)"><path d="M8.5 22V10c0-3.5 1.6-6.3 3.5-8 1.900 1.700 3.500 4.500 3.500 8v12z" fill="#e8b130"/><rect x="8.500" y="17.500" width="7" height="4.500" fill="#9a6b12"/></g></svg>';
+  const PRESETS = [
+    { min: 1, icon: BULLET },
+    { min: 3, icon: '⚡' },
+    { min: 5, icon: '⚡' },
+    { min: 10, icon: '⏱️' },
+    { min: 30, icon: '⏱️' },
+  ];
+  // Ab wann die Zeit rot wird
+  const WARN_MS = { 1: 10000, 3: 30000, 5: 30000, 10: 60000, 30: 60000 };
+
   let minutes = 5;
+  let whiteIdx = 0;         // welche Uhr Weiß gehört
   let remaining = [0, 0];   // ms
   let moves = [0, 0];
+  let warned = [false, false];
   let active = -1;          // -1 = noch nicht gestartet
   let paused = false;
   let finished = false;
+  let winner = -1;
+  let endReason = '';       // 'time' oder 'mate'
   let lastTick = 0;
+
+  const nameOf = i => i === whiteIdx ? 'Weiß' : 'Schwarz';
+  const warnMs = () => WARN_MS[minutes] || 30000;
 
   // ---------- Anzeige ----------
   function fmt(ms) {
@@ -180,40 +226,37 @@
   }
 
   function render() {
+    const running = active !== -1 && !finished;
     for (let i = 0; i < 2; i++) {
+      const lost = finished && endReason === 'time' && winner !== i;
       timeEls[i].textContent = fmt(remaining[i]);
       timeEls[i].classList.toggle('low', remaining[i] <= warnMs());
       moveEls[i].textContent = `Züge: ${moves[i]}`;
-      nameEls[i].textContent = nameOf(i);
+      nameEls[i].textContent = finished && winner === i ? `♚ ${nameOf(i)} gewinnt` : nameOf(i);
       panels[i].classList.toggle('white', i === whiteIdx);
       panels[i].classList.toggle('black', i !== whiteIdx);
-      panels[i].classList.toggle('active', active === i && !paused && !finished);
-      panels[i].classList.toggle('idle', active !== -1 && !finished && (paused || active !== i));
-      panels[i].classList.toggle('lost', finished && remaining[i] <= 0);
+      panels[i].classList.toggle('active', running && active === i && !paused);
+      panels[i].classList.toggle('won', finished && winner === i);
+      panels[i].classList.toggle('lost', lost);
+      panels[i].classList.toggle('idle',
+        (running && (paused || active !== i)) || (finished && endReason === 'mate' && winner !== i));
     }
-    pauseBtn.disabled = active === -1 || finished;
+    pauseBtn.disabled = !running;
+    pauseBtn.textContent = paused ? '▶' : '⏸';
     swapBtn.disabled = active !== -1;
-    pauseBtn.textContent = paused ? '▶ Weiter' : '⏸ Pause';
+    undoBtn.hidden = !(finished && endReason === 'mate');
   }
 
-  function setStatus(msg) { statusEl.textContent = msg; }
+  let toastTimer;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.hidden = true; }, 3500);
+  }
 
   // ---------- Ton ----------
   let audioCtx;
-  function beep(freq = 880, dur = 0.06, vol = 0.15) {
-    try {
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.frequency.value = freq;
-      g.gain.value = vol;
-      o.connect(g); g.connect(audioCtx.destination);
-      o.start();
-      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
-      o.stop(audioCtx.currentTime + dur);
-    } catch (e) {}
-  }
-
-  // Einzelner Ton, zeitlich versetzt planbar
   function tone(freq, start, dur, vol = 0.2, type = 'sine') {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -228,6 +271,7 @@
       o.stop(t0 + dur);
     } catch (e) {}
   }
+  const clickSound = () => tone(880, 0, 0.06, 0.15);
   // Kurzes Signal, wenn die Zeit knapp wird
   function lowTimeSound() {
     tone(1320, 0, 0.1, 0.22);
@@ -240,11 +284,13 @@
     tone(494, 0.6, 0.3, 0.28, 'triangle');
     tone(294, 0.9, 1.2, 0.32, 'triangle');
   }
-
-  // Warnschwelle je nach gewählter Zeit
-  const WARN_MS = { 1: 10000, 3: 30000, 5: 30000, 10: 60000, 30: 60000 };
-  const warnMs = () => WARN_MS[minutes] || 30000;
-  let warned = [false, false];
+  // Schachmatt: aufsteigende Tonfolge
+  function mateSound() {
+    tone(523, 0.0, 0.18, 0.25, 'triangle');
+    tone(659, 0.18, 0.18, 0.25, 'triangle');
+    tone(784, 0.36, 0.18, 0.25, 'triangle');
+    tone(1047, 0.54, 0.7, 0.28, 'triangle');
+  }
 
   // ---------- Uhr-Logik ----------
   function reset() {
@@ -254,7 +300,8 @@
     active = -1;
     paused = false;
     finished = false;
-    setStatus(START_HINT);
+    winner = -1;
+    endReason = '';
     render();
   }
 
@@ -264,7 +311,8 @@
       if (remaining[active] <= 0) {
         remaining[active] = 0;
         finished = true;
-        setStatus(`Zeit abgelaufen – ${nameOf(active)} verliert auf Zeit.`);
+        winner = 1 - active;
+        endReason = 'time';
         endSound();
       } else if (!warned[active] && remaining[active] <= warnMs()) {
         warned[active] = true;
@@ -280,17 +328,14 @@
   function switchClock(by) {
     if (finished || paused) return false;
     if (active === -1) {
-      // Start: Weiß beginnt immer, egal wer drückt.
-      active = whiteIdx;
-      setStatus('Läuft – Weiß ist am Zug.');
+      active = whiteIdx;                 // Weiß beginnt immer
     } else {
       if (by !== undefined && by !== active) return false; // nur der Spieler am Zug darf drücken
       moves[active]++;
       active = 1 - active;
-      setStatus(`${nameOf(active)} ist am Zug.`);
     }
     lastTick = performance.now();
-    beep();
+    clickSound();
     keepAwake();
     render();
     return true;
@@ -300,7 +345,27 @@
     if (active === -1 || finished) return;
     paused = !paused;
     lastTick = performance.now();
-    setStatus(paused ? 'Pausiert.' : `${nameOf(active)} ist am Zug.`);
+    render();
+  }
+
+  // Schachmatt: wer gerade am Zug ist (dessen Uhr läuft), gewinnt
+  function declareMate() {
+    if (active === -1 || finished || paused) return false;
+    finished = true;
+    winner = active;
+    endReason = 'mate';
+    mateSound();
+    render();
+    return true;
+  }
+
+  // Falsch erkanntes Schachmatt zurücknehmen und weiterspielen
+  function undoMate() {
+    if (!(finished && endReason === 'mate')) return;
+    finished = false;
+    winner = -1;
+    endReason = '';
+    lastTick = performance.now();
     render();
   }
 
@@ -316,14 +381,45 @@
     }
   });
 
-  $('presets').addEventListener('click', e => {
+  const gameRunning = () => active !== -1 && !finished;
+  const confirmAbort = () => !gameRunning() || confirm('Laufende Partie abbrechen und neu starten?');
+
+  // Zeit-Menü
+  function updateTimeBtn() {
+    const p = PRESETS.find(x => x.min === minutes);
+    $('timeIcon').innerHTML = p.icon;
+    $('timeNum').textContent = p.min;
+    timeMenu.querySelectorAll('button').forEach(b => b.classList.toggle('sel', Number(b.dataset.min) === minutes));
+  }
+  PRESETS.forEach(p => {
+    const b = document.createElement('button');
+    b.className = 'ctl';
+    b.dataset.min = p.min;
+    b.innerHTML = `<span>${p.icon}</span><span>${p.min} min</span>`;
+    timeMenu.appendChild(b);
+  });
+  timeBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    timeMenu.hidden = !timeMenu.hidden;
+  });
+  timeMenu.addEventListener('click', e => {
+    e.stopPropagation();
     const b = e.target.closest('button[data-min]');
     if (!b) return;
-    if (active !== -1 && !finished && !confirm('Laufende Partie abbrechen und neu starten?')) return;
+    timeMenu.hidden = true;
+    if (!confirmAbort()) return;
     minutes = Number(b.dataset.min);
-    document.querySelectorAll('#presets button').forEach(x => x.classList.toggle('sel', x === b));
+    updateTimeBtn();
     reset();
   });
+  // Tipp außerhalb schließt das Menü (und zählt dann nicht als Zug)
+  document.addEventListener('click', e => {
+    if (!timeMenu.hidden && !e.target.closest('.menuwrap')) {
+      timeMenu.hidden = true;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
 
   pauseBtn.addEventListener('click', togglePause);
   swapBtn.addEventListener('click', () => {
@@ -331,10 +427,9 @@
     whiteIdx = 1 - whiteIdx;
     render();
   });
-  $('reset').addEventListener('click', () => {
-    if (active !== -1 && !finished && !confirm('Laufende Partie abbrechen und neu starten?')) return;
-    reset();
-  });
+  $('reset').addEventListener('click', () => { if (confirmAbort()) reset(); });
+  undoBtn.addEventListener('click', undoMate);
+
   // Buttons sollen nach dem Klick nicht auf die Leertaste reagieren
   document.querySelectorAll('button').forEach(b => b.addEventListener('keydown', e => {
     if (e.code === 'Space' || e.code === 'Enter') e.preventDefault();
@@ -354,15 +449,31 @@
   // ---------- Sprachsteuerung ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const KEYWORDS = /weiter|schach|stopp|stop/g;
-  let rec = null, micOn = false, handled = {}, lastVoice = 0;
+  const MATE = /schach\s*matt|\bmatt\b/;
+  let rec = null, micOn = false;
+  let handled = {}, mateSeen = {}, lastVoice = 0, lastSwitch = null;
 
-  function voiceTrigger(word) {
+  function voiceTrigger(word, idx) {
     const now = performance.now();
     if (now - lastVoice < 700) return;      // Doppelauslösung verhindern
+    const wasStart = active === -1;
     if (switchClock()) {
       lastVoice = now;
-      setStatus(`🎤 „${word}“ erkannt – ${nameOf(active)} ist am Zug.`);
+      lastSwitch = { idx, word, t: now, wasStart };
     }
+  }
+
+  function voiceMate(idx) {
+    if (active === -1 || finished || paused) return;
+    // "Schachmatt" kommt oft erst als "Schach" an und hat dann schon umgeschaltet:
+    // dieses Umschalten zurücknehmen, damit der richtige Spieler gewinnt.
+    const s = lastSwitch;
+    if (s && s.idx === idx && s.word === 'schach' && !s.wasStart && performance.now() - s.t < 4000) {
+      active = 1 - active;
+      moves[active] = Math.max(0, moves[active] - 1);
+    }
+    lastSwitch = null;
+    declareMate();
   }
 
   function startRec() {
@@ -370,15 +481,19 @@
     rec.lang = 'de-DE';
     rec.continuous = true;
     rec.interimResults = true;   // Zwischenergebnisse = schnellere Reaktion
-    handled = {};
+    handled = {}; mateSeen = {}; lastSwitch = null;
 
     rec.onresult = e => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const text = e.results[i][0].transcript.toLowerCase();
+        if (MATE.test(text)) {
+          if (!mateSeen[i]) { mateSeen[i] = true; voiceMate(i); }
+          continue;
+        }
         const hits = text.match(KEYWORDS) || [];
         if (hits.length > (handled[i] || 0)) {
           handled[i] = hits.length;
-          voiceTrigger(hits[hits.length - 1]);
+          voiceTrigger(hits[hits.length - 1], i);
         }
       }
     };
@@ -386,9 +501,9 @@
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         micOn = false;
         updateMic();
-        setStatus('Mikrofon-Zugriff wurde nicht erlaubt. Bitte im Browser freigeben.');
+        toast('Mikrofon-Zugriff wurde nicht erlaubt.');
       } else if (e.error === 'network') {
-        setStatus('Spracherkennung braucht eine Internetverbindung.');
+        toast('Spracherkennung braucht Internet.');
       }
     };
     rec.onend = () => {
@@ -398,27 +513,24 @@
     rec.start();
   }
 
-  function updateMic() {
-    micBtn.classList.toggle('on', micOn);
-    micBtn.textContent = micOn ? '🎤 Hört zu …' : '🎤 Sprache an';
-  }
+  function updateMic() { micBtn.classList.toggle('on', micOn); }
 
   micBtn.addEventListener('click', () => {
     if (!SR) {
-      setStatus('Dieser Browser unterstützt keine Spracherkennung – bitte Chrome oder Edge verwenden.');
+      toast('Spracherkennung geht nur in Chrome oder Edge.');
       return;
     }
     micOn = !micOn;
     if (micOn) {
-      try { startRec(); setStatus('Sprachsteuerung aktiv: sag „weiter“, „Schach“ oder „stopp“.'); }
-      catch (e) { micOn = false; setStatus('Spracherkennung konnte nicht gestartet werden.'); }
+      try { startRec(); }
+      catch (e) { micOn = false; toast('Spracherkennung konnte nicht starten.'); }
     } else {
       try { rec && rec.stop(); } catch (e) {}
-      setStatus('Sprachsteuerung aus.');
     }
     updateMic();
   });
 
+  updateTimeBtn();
   reset();
   requestAnimationFrame(tick);
 })();
