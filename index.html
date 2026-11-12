@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Schachuhr</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #23272e;
+    --panel-active: #2f9e5b;
+    --panel-lost: #c0392b;
+    --text: #e9ecef;
+    --muted: #8b939e;
+    --bar: #1b1e23;
+    --accent: #4dabf7;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid;
+    height: 100dvh;
+    gap: 8px;
+    padding: 8px;
+    grid-template-areas: "p1" "bar" "p2";
+    grid-template-rows: 1fr auto 1fr;
+    user-select: none;
+    overflow: hidden;
+  }
+  /* Querformat: Leiste oben, Uhren nebeneinander */
+  @media (min-aspect-ratio: 1/1) {
+    body {
+      grid-template-areas: "bar bar" "p1 p2";
+      grid-template-rows: auto 1fr;
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  /* Hochformat: obere Uhr umgedreht, damit man sich gegenübersitzen kann */
+  @media (max-aspect-ratio: 1/1) {
+    #p1 { transform: rotate(180deg); }
+  }
+
+  .panel {
+    border: 0;
+    border-radius: 16px;
+    background: var(--panel);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    font: inherit;
+    transition: background .15s;
+    min-height: 0;
+  }
+  #p1 { grid-area: p1; }
+  #p2 { grid-area: p2; }
+  .panel { border: 6px solid transparent; transition: background .15s, opacity .15s, border-color .15s; }
+  .panel.white { background: #f1f3f5; color: #111; }
+  .panel.black { background: #08090b; color: #f1f3f5; border-color: #2b3038; }
+  .panel.active { border-color: var(--panel-active); box-shadow: 0 0 24px rgba(47, 158, 91, .6); }
+  .panel.idle { opacity: .45; }
+  .panel.lost { background: var(--panel-lost); color: #fff; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .6; } }
+  .panel .name { font-size: clamp(14px, 2.5vmin, 22px); opacity: .8; letter-spacing: .08em; text-transform: uppercase; }
+  .panel .time {
+    font-size: clamp(56px, 19vmin, 220px);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .panel .moves { font-size: clamp(13px, 2.2vmin, 18px); opacity: .7; }
+
+  #bar {
+    grid-area: bar;
+    background: var(--bar);
+    border-radius: 16px;
+    padding: 8px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .group { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  button.ctl {
+    background: #2b3038;
+    color: var(--text);
+    border: 1px solid #3a414b;
+    border-radius: 10px;
+    padding: 9px 13px;
+    font: inherit;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  button.ctl:hover { background: #343a44; }
+  button.ctl.sel { background: var(--accent); border-color: var(--accent); color: #06121d; font-weight: 600; }
+  button.ctl.on { background: #e03131; border-color: #e03131; color: #fff; }
+  button.ctl:disabled { opacity: .4; cursor: default; }
+  #status {
+    flex-basis: 100%;
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+    min-height: 1.2em;
+  }
+</style>
+</head>
+<body>
+
+<button class="panel" id="p1">
+  <span class="name" id="n1">Weiß</span>
+  <span class="time" id="t1">5:00</span>
+  <span class="moves" id="m1">Züge: 0</span>
+</button>
+
+<div id="bar">
+  <div class="group" id="presets">
+    <button class="ctl" data-min="1">1 Min</button>
+    <button class="ctl" data-min="3">3 Min</button>
+    <button class="ctl sel" data-min="5">5 Min</button>
+    <button class="ctl" data-min="10">10 Min</button>
+    <button class="ctl" data-min="30">30 Min</button>
+  </div>
+  <div class="group">
+    <button class="ctl" id="swap">⇄ Weiß/Schwarz tauschen</button>
+    <button class="ctl" id="pause" disabled>⏸ Pause</button>
+    <button class="ctl" id="reset">↺ Neu</button>
+    <button class="ctl" id="mic">🎤 Sprache an</button>
+  </div>
+  <div id="status"></div>
+</div>
+
+<button class="panel" id="p2">
+  <span class="name" id="n2">Schwarz</span>
+  <span class="time" id="t2">5:00</span>
+  <span class="moves" id="m2">Züge: 0</span>
+</button>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const panels = [$('p1'), $('p2')];
+  const timeEls = [$('t1'), $('t2')];
+  const moveEls = [$('m1'), $('m2')];
+  const statusEl = $('status');
+  const pauseBtn = $('pause');
+  const micBtn = $('mic');
+
+  const nameEls = [$('n1'), $('n2')];
+  const swapBtn = $('swap');
+  let whiteIdx = 0;         // welche Uhr Weiß gehört
+  const nameOf = i => i === whiteIdx ? 'Weiß' : 'Schwarz';
+  const START_HINT = 'Weiß beginnt: Uhr antippen, Leertaste oder „weiter“ sagen.';
+  let minutes = 5;
+  let remaining = [0, 0];   // ms
+  let moves = [0, 0];
+  let active = -1;          // -1 = noch nicht gestartet
+  let paused = false;
+  let finished = false;
+  let lastTick = 0;
+
+  // ---------- Anzeige ----------
+  function fmt(ms) {
+    ms = Math.max(0, ms);
+    if (ms < 10000) {
+      const s = Math.floor(ms / 1000), d = Math.floor((ms % 1000) / 100);
+      return `0:0${s}.${d}`;
+    }
+    const total = Math.ceil(ms / 1000);
+    const m = Math.floor(total / 60), s = total % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  function render() {
+    for (let i = 0; i < 2; i++) {
+      timeEls[i].textContent = fmt(remaining[i]);
+      moveEls[i].textContent = `Züge: ${moves[i]}`;
+      nameEls[i].textContent = nameOf(i);
+      panels[i].classList.toggle('white', i === whiteIdx);
+      panels[i].classList.toggle('black', i !== whiteIdx);
+      panels[i].classList.toggle('active', active === i && !paused && !finished);
+      panels[i].classList.toggle('idle', active !== -1 && !finished && (paused || active !== i));
+      panels[i].classList.toggle('lost', finished && remaining[i] <= 0);
+    }
+    pauseBtn.disabled = active === -1 || finished;
+    swapBtn.disabled = active !== -1;
+    pauseBtn.textContent = paused ? '▶ Weiter' : '⏸ Pause';
+  }
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+
+  // ---------- Ton ----------
+  let audioCtx;
+  function beep(freq = 880, dur = 0.06, vol = 0.15) {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.frequency.value = freq;
+      g.gain.value = vol;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start();
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+      o.stop(audioCtx.currentTime + dur);
+    } catch (e) {}
+  }
+
+  // ---------- Uhr-Logik ----------
+  function reset() {
+    remaining = [minutes * 60000, minutes * 60000];
+    moves = [0, 0];
+    active = -1;
+    paused = false;
+    finished = false;
+    setStatus(START_HINT);
+    render();
+  }
+
+  function tick(now) {
+    if (active !== -1 && !paused && !finished) {
+      remaining[active] -= now - lastTick;
+      if (remaining[active] <= 0) {
+        remaining[active] = 0;
+        finished = true;
+        setStatus(`Zeit abgelaufen – ${nameOf(active)} verliert auf Zeit.`);
+        beep(220, 0.9, 0.3);
+      }
+      render();
+    }
+    lastTick = now;
+    requestAnimationFrame(tick);
+  }
+
+  // Uhr umschalten. "by" = Spieler, der gedrückt hat (0/1), oder undefined (Stimme/Leertaste)
+  function switchClock(by) {
+    if (finished || paused) return false;
+    if (active === -1) {
+      // Start: Weiß beginnt immer, egal wer drückt.
+      active = whiteIdx;
+      setStatus('Läuft – Weiß ist am Zug.');
+    } else {
+      if (by !== undefined && by !== active) return false; // nur der Spieler am Zug darf drücken
+      moves[active]++;
+      active = 1 - active;
+      setStatus(`${nameOf(active)} ist am Zug.`);
+    }
+    lastTick = performance.now();
+    beep();
+    keepAwake();
+    render();
+    return true;
+  }
+
+  function togglePause() {
+    if (active === -1 || finished) return;
+    paused = !paused;
+    lastTick = performance.now();
+    setStatus(paused ? 'Pausiert.' : `${nameOf(active)} ist am Zug.`);
+    render();
+  }
+
+  // ---------- Bedienung ----------
+  panels.forEach((p, i) => p.addEventListener('click', () => switchClock(i)));
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'Enter') {
+      e.preventDefault();
+      if (!e.repeat) switchClock();
+    } else if (e.key === 'p' || e.key === 'P') {
+      togglePause();
+    }
+  });
+
+  $('presets').addEventListener('click', e => {
+    const b = e.target.closest('button[data-min]');
+    if (!b) return;
+    if (active !== -1 && !finished && !confirm('Laufende Partie abbrechen und neu starten?')) return;
+    minutes = Number(b.dataset.min);
+    document.querySelectorAll('#presets button').forEach(x => x.classList.toggle('sel', x === b));
+    reset();
+  });
+
+  pauseBtn.addEventListener('click', togglePause);
+  swapBtn.addEventListener('click', () => {
+    if (active !== -1) return;
+    whiteIdx = 1 - whiteIdx;
+    render();
+  });
+  $('reset').addEventListener('click', () => {
+    if (active !== -1 && !finished && !confirm('Laufende Partie abbrechen und neu starten?')) return;
+    reset();
+  });
+  // Buttons sollen nach dem Klick nicht auf die Leertaste reagieren
+  document.querySelectorAll('button').forEach(b => b.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'Enter') e.preventDefault();
+  }));
+
+  // Bildschirm wach halten (falls unterstützt)
+  let wakeLock;
+  async function keepAwake() {
+    try {
+      if (!wakeLock && navigator.wakeLock) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      }
+    } catch (e) {}
+  }
+
+  // ---------- Sprachsteuerung ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const KEYWORDS = /weiter|schach|stopp|stop/g;
+  let rec = null, micOn = false, handled = {}, lastVoice = 0;
+
+  function voiceTrigger(word) {
+    const now = performance.now();
+    if (now - lastVoice < 700) return;      // Doppelauslösung verhindern
+    if (switchClock()) {
+      lastVoice = now;
+      setStatus(`🎤 „${word}“ erkannt – ${nameOf(active)} ist am Zug.`);
+    }
+  }
+
+  function startRec() {
+    rec = new SR();
+    rec.lang = 'de-DE';
+    rec.continuous = true;
+    rec.interimResults = true;   // Zwischenergebnisse = schnellere Reaktion
+    handled = {};
+
+    rec.onresult = e => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const text = e.results[i][0].transcript.toLowerCase();
+        const hits = text.match(KEYWORDS) || [];
+        if (hits.length > (handled[i] || 0)) {
+          handled[i] = hits.length;
+          voiceTrigger(hits[hits.length - 1]);
+        }
+      }
+    };
+    rec.onerror = e => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        micOn = false;
+        updateMic();
+        setStatus('Mikrofon-Zugriff wurde nicht erlaubt. Bitte im Browser freigeben.');
+      } else if (e.error === 'network') {
+        setStatus('Spracherkennung braucht eine Internetverbindung.');
+      }
+    };
+    rec.onend = () => {
+      // Der Browser beendet die Erkennung nach Stille – einfach neu starten
+      if (micOn) setTimeout(() => { if (micOn) { try { startRec(); } catch (e) {} } }, 150);
+    };
+    rec.start();
+  }
+
+  function updateMic() {
+    micBtn.classList.toggle('on', micOn);
+    micBtn.textContent = micOn ? '🎤 Hört zu …' : '🎤 Sprache an';
+  }
+
+  micBtn.addEventListener('click', () => {
+    if (!SR) {
+      setStatus('Dieser Browser unterstützt keine Spracherkennung – bitte Chrome oder Edge verwenden.');
+      return;
+    }
+    micOn = !micOn;
+    if (micOn) {
+      try { startRec(); setStatus('Sprachsteuerung aktiv: sag „weiter“, „Schach“ oder „stopp“.'); }
+      catch (e) { micOn = false; setStatus('Spracherkennung konnte nicht gestartet werden.'); }
+    } else {
+      try { rec && rec.stop(); } catch (e) {}
+      setStatus('Sprachsteuerung aus.');
+    }
+    updateMic();
+  });
+
+  reset();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
