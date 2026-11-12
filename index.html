@@ -2,7 +2,10 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#14161a">
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
 <title>Schachuhr</title>
 <style>
   :root {
@@ -13,7 +16,8 @@
     --bar: #1b1e23;
     --accent: #4dabf7;
   }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* touch-action: manipulation schaltet das Zoomen per Doppeltipp ab */
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   [hidden] { display: none !important; }
   html, body { margin: 0; height: 100%; }
   body {
@@ -257,6 +261,15 @@
 
   // ---------- Ton ----------
   let audioCtx;
+  let voices = [];   // geplante/laufende Töne, damit man sie abbrechen kann
+  // Alle noch laufenden oder geplanten Töne sofort beenden (z. B. bei neuer Runde)
+  function stopSounds() {
+    voices.forEach(v => {
+      try { v.g.disconnect(); } catch (e) {}
+      try { v.o.stop(); } catch (e) {}
+    });
+    voices = [];
+  }
   function tone(freq, start, dur, vol = 0.2, type = 'sine') {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -269,6 +282,9 @@
       o.connect(g); g.connect(audioCtx.destination);
       o.start(t0);
       o.stop(t0 + dur);
+      const v = { o, g };
+      voices.push(v);
+      o.onended = () => { voices = voices.filter(x => x !== v); };
     } catch (e) {}
   }
   const clickSound = () => tone(880, 0, 0.06, 0.15);
@@ -294,6 +310,7 @@
 
   // ---------- Uhr-Logik ----------
   function reset() {
+    stopSounds();
     remaining = [minutes * 60000, minutes * 60000];
     moves = [0, 0];
     warned = [false, false];
@@ -362,6 +379,7 @@
   // Falsch erkanntes Schachmatt zurücknehmen und weiterspielen
   function undoMate() {
     if (!(finished && endReason === 'mate')) return;
+    stopSounds();
     finished = false;
     winner = -1;
     endReason = '';
@@ -434,6 +452,9 @@
   document.querySelectorAll('button').forEach(b => b.addEventListener('keydown', e => {
     if (e.code === 'Space' || e.code === 'Enter') e.preventDefault();
   }));
+
+  // Zusätzliche Sicherung gegen Zoomen per Doppeltipp
+  document.addEventListener('dblclick', e => e.preventDefault());
 
   // Bildschirm wach halten (falls unterstützt)
   let wakeLock;
