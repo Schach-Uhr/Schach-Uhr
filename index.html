@@ -74,6 +74,8 @@
     font-variant-numeric: tabular-nums;
     line-height: 1;
   }
+  .panel .time.low { color: #ff3b30; text-shadow: 0 0 22px rgba(255, 59, 48, .85); }
+  .panel.lost .time.low { color: #fff; text-shadow: none; }
   .panel .moves { font-size: clamp(13px, 2.2vmin, 18px); opacity: .7; }
 
   #bar {
@@ -180,6 +182,7 @@
   function render() {
     for (let i = 0; i < 2; i++) {
       timeEls[i].textContent = fmt(remaining[i]);
+      timeEls[i].classList.toggle('low', remaining[i] <= warnMs());
       moveEls[i].textContent = `Züge: ${moves[i]}`;
       nameEls[i].textContent = nameOf(i);
       panels[i].classList.toggle('white', i === whiteIdx);
@@ -210,10 +213,44 @@
     } catch (e) {}
   }
 
+  // Einzelner Ton, zeitlich versetzt planbar
+  function tone(freq, start, dur, vol = 0.2, type = 'sine') {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const t0 = audioCtx.currentTime + start;
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, t0);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t0);
+      o.stop(t0 + dur);
+    } catch (e) {}
+  }
+  // Kurzes Signal, wenn die Zeit knapp wird
+  function lowTimeSound() {
+    tone(1320, 0, 0.1, 0.22);
+    tone(1320, 0.15, 0.1, 0.22);
+  }
+  // Zeit abgelaufen: absteigende Tonfolge, ca. 2 Sekunden
+  function endSound() {
+    tone(784, 0.0, 0.3, 0.28, 'triangle');
+    tone(622, 0.3, 0.3, 0.28, 'triangle');
+    tone(494, 0.6, 0.3, 0.28, 'triangle');
+    tone(294, 0.9, 1.2, 0.32, 'triangle');
+  }
+
+  // Warnschwelle je nach gewählter Zeit
+  const WARN_MS = { 1: 10000, 3: 30000, 5: 30000, 10: 60000, 30: 60000 };
+  const warnMs = () => WARN_MS[minutes] || 30000;
+  let warned = [false, false];
+
   // ---------- Uhr-Logik ----------
   function reset() {
     remaining = [minutes * 60000, minutes * 60000];
     moves = [0, 0];
+    warned = [false, false];
     active = -1;
     paused = false;
     finished = false;
@@ -228,7 +265,10 @@
         remaining[active] = 0;
         finished = true;
         setStatus(`Zeit abgelaufen – ${nameOf(active)} verliert auf Zeit.`);
-        beep(220, 0.9, 0.3);
+        endSound();
+      } else if (!warned[active] && remaining[active] <= warnMs()) {
+        warned[active] = true;
+        lowTimeSound();
       }
       render();
     }
